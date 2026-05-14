@@ -5,6 +5,7 @@ using System.Threading.Tasks;
 using Microsoft.Data.SqlClient;
 using Microsoft.Extensions.Logging;
 
+using UmbrellaFrame.ModelSync.Core;
 using UmbrellaFrame.ModelSync.Core.Interfaces;
 using UmbrellaFrame.ModelSync.Core.Services;
 using UmbrellaFrame.ModelSync.SqlServer.Resources;
@@ -20,7 +21,7 @@ namespace UmbrellaFrame.ModelSync.SqlServer
         private readonly string _connectionString;
 
         /// <inheritdoc/>
-        protected override string QuoteIdentifier(string identifier) => $"[{identifier}]";
+        protected override string QuoteValidatedIdentifier(string identifier) => $"[{identifier}]";
 
         /// <summary>
         /// SQL Server does not support <c>CREATE TABLE IF NOT EXISTS</c> inline.
@@ -56,10 +57,10 @@ namespace UmbrellaFrame.ModelSync.SqlServer
             if (ifNotExists)
             {
                 var pm = new Core.Helpers.DynamicPropertyManager<T>();
-                var attr = pm.GetClassAttribute<Core.DbTableNameAttribute>();
-                var tableName = attr?.TableName ?? typeof(T).Name;
+                var tableName = GetTableName(pm);
+                var quotedTableName = QuoteIdentifier(tableName);
 
-                sql = $"IF OBJECT_ID(N'[{tableName}]', N'U') IS NULL\nBEGIN\n{sql}\nEND";
+                sql = $"IF OBJECT_ID(N'{quotedTableName}', N'U') IS NULL\nBEGIN\n{sql}\nEND";
 
                 // Update the cache with the guarded SQL
                 SqlCache[typeof(T)] = sql;
@@ -79,13 +80,14 @@ namespace UmbrellaFrame.ModelSync.SqlServer
             if (string.IsNullOrEmpty(databaseName))
                 return;
 
+            ValidateIdentifier(databaseName);
             builder.InitialCatalog = "master";
             builder.ConnectTimeout = 10;
 
             using var masterConnection = new SqlConnection(builder.ConnectionString);
             masterConnection.Open();
 
-            var sql = $"IF NOT EXISTS (SELECT 1 FROM sys.databases WHERE name = N'{databaseName}') CREATE DATABASE [{databaseName}];";
+            var sql = $"IF NOT EXISTS (SELECT 1 FROM sys.databases WHERE name = N'{databaseName}') CREATE DATABASE {QuoteIdentifier(databaseName)};";
             using var command = new SqlCommand(sql, masterConnection);
             command.ExecuteNonQuery();
         }
@@ -99,13 +101,14 @@ namespace UmbrellaFrame.ModelSync.SqlServer
             if (string.IsNullOrEmpty(databaseName))
                 return;
 
+            ValidateIdentifier(databaseName);
             builder.InitialCatalog = "master";
             builder.ConnectTimeout = 10;
 
             using var masterConnection = new SqlConnection(builder.ConnectionString);
             await masterConnection.OpenAsync(cancellationToken).ConfigureAwait(false);
 
-            var sql = $"IF NOT EXISTS (SELECT 1 FROM sys.databases WHERE name = N'{databaseName}') CREATE DATABASE [{databaseName}];";
+            var sql = $"IF NOT EXISTS (SELECT 1 FROM sys.databases WHERE name = N'{databaseName}') CREATE DATABASE {QuoteIdentifier(databaseName)};";
             using var command = new SqlCommand(sql, masterConnection);
             await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
         }
@@ -152,13 +155,19 @@ namespace UmbrellaFrame.ModelSync.SqlServer
 
         /// <inheritdoc/>
         public void DropTables()
+            => RequireDestructivePermission(null, nameof(DropTables));
+
+        /// <inheritdoc/>
+        public void DropTables(DestructiveOperationOptions options)
         {
+            RequireDestructivePermission(options, nameof(DropTables));
+
             using var connection = new SqlConnection(_connectionString);
             connection.Open();
 
             foreach (var type in SqlCache.Keys)
             {
-                var sql = $"IF OBJECT_ID(N'{type.Name}', N'U') IS NOT NULL DROP TABLE [{type.Name}];";
+                var sql = BuildDropTableSql(type);
                 using var command = new SqlCommand(sql, connection);
                 command.ExecuteNonQuery();
             }
@@ -166,14 +175,20 @@ namespace UmbrellaFrame.ModelSync.SqlServer
 
         /// <inheritdoc/>
         public async Task DropTablesAsync(CancellationToken cancellationToken = default)
+            => await DropTablesAsync(null, cancellationToken).ConfigureAwait(false);
+
+        /// <inheritdoc/>
+        public async Task DropTablesAsync(DestructiveOperationOptions options, CancellationToken cancellationToken = default)
         {
+            RequireDestructivePermission(options, nameof(DropTablesAsync));
+
             using var connection = new SqlConnection(_connectionString);
             await connection.OpenAsync(cancellationToken).ConfigureAwait(false);
 
             foreach (var type in SqlCache.Keys)
             {
                 cancellationToken.ThrowIfCancellationRequested();
-                var sql = $"IF OBJECT_ID(N'{type.Name}', N'U') IS NOT NULL DROP TABLE [{type.Name}];";
+                var sql = BuildDropTableSql(type);
                 using var command = new SqlCommand(sql, connection);
                 await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
             }
@@ -203,7 +218,13 @@ namespace UmbrellaFrame.ModelSync.SqlServer
 
         /// <inheritdoc/>
         public void DropColumn<T>(string columnName) where T : class, new()
+            => RequireDestructivePermission(null, nameof(DropColumn));
+
+        /// <inheritdoc/>
+        public void DropColumn<T>(string columnName, DestructiveOperationOptions options) where T : class, new()
         {
+            RequireDestructivePermission(options, nameof(DropColumn));
+
             var sql = BuildDropColumnSql<T>(columnName);
             using var connection = new SqlConnection(_connectionString);
             connection.Open();
@@ -213,7 +234,13 @@ namespace UmbrellaFrame.ModelSync.SqlServer
 
         /// <inheritdoc/>
         public async Task DropColumnAsync<T>(string columnName, CancellationToken cancellationToken = default) where T : class, new()
+            => await DropColumnAsync<T>(columnName, null, cancellationToken).ConfigureAwait(false);
+
+        /// <inheritdoc/>
+        public async Task DropColumnAsync<T>(string columnName, DestructiveOperationOptions options, CancellationToken cancellationToken = default) where T : class, new()
         {
+            RequireDestructivePermission(options, nameof(DropColumnAsync));
+
             var sql = BuildDropColumnSql<T>(columnName);
             using var connection = new SqlConnection(_connectionString);
             await connection.OpenAsync(cancellationToken).ConfigureAwait(false);
@@ -227,8 +254,9 @@ namespace UmbrellaFrame.ModelSync.SqlServer
         protected override string BuildRenameColumnSql<T>(string oldColumnName, string newColumnName)
         {
             var propertyManager = new Core.Helpers.DynamicPropertyManager<T>();
-            var tableNameAttr = propertyManager.GetClassAttribute<Core.DbTableNameAttribute>();
-            var tableName = tableNameAttr?.TableName ?? typeof(T).Name;
+            var tableName = GetTableName(propertyManager);
+            ValidateIdentifier(oldColumnName);
+            ValidateIdentifier(newColumnName);
             return $"EXEC sp_rename N'{tableName}.{oldColumnName}', N'{newColumnName}', N'COLUMN';";
         }
 
@@ -258,17 +286,22 @@ namespace UmbrellaFrame.ModelSync.SqlServer
         protected override string BuildAlterColumnTypeSql<T>(string columnName)
         {
             var propertyManager = new Core.Helpers.DynamicPropertyManager<T>();
-            var tableNameAttr = propertyManager.GetClassAttribute<Core.DbTableNameAttribute>();
-            var tableName = tableNameAttr?.TableName ?? typeof(T).Name;
-            var columnTypeAttr = propertyManager.GetAttribute<Core.DbColumnTypeAttribute>(columnName);
+            var tableName = GetTableName(propertyManager);
+            var columnTypeAttr = propertyManager.GetAttribute<DbColumnTypeAttribute>(columnName);
             if (columnTypeAttr == null)
                 throw new InvalidOperationException($"Column '{columnName}' has no type attribute on {typeof(T).Name}.");
-            return $"ALTER TABLE [{tableName}] ALTER COLUMN [{columnName}] {columnTypeAttr.GetColumnType()};";
+            return $"ALTER TABLE {QuoteIdentifier(tableName)} ALTER COLUMN {QuoteIdentifier(columnName)} {columnTypeAttr.GetColumnType()};";
         }
 
         /// <inheritdoc/>
         public void AlterColumnType<T>(string columnName) where T : class, new()
+            => RequireDestructivePermission(null, nameof(AlterColumnType));
+
+        /// <inheritdoc/>
+        public void AlterColumnType<T>(string columnName, DestructiveOperationOptions options) where T : class, new()
         {
+            RequireDestructivePermission(options, nameof(AlterColumnType));
+
             var sql = BuildAlterColumnTypeSql<T>(columnName);
             using var connection = new SqlConnection(_connectionString);
             connection.Open();
@@ -278,7 +311,13 @@ namespace UmbrellaFrame.ModelSync.SqlServer
 
         /// <inheritdoc/>
         public async Task AlterColumnTypeAsync<T>(string columnName, CancellationToken cancellationToken = default) where T : class, new()
+            => await AlterColumnTypeAsync<T>(columnName, null, cancellationToken).ConfigureAwait(false);
+
+        /// <inheritdoc/>
+        public async Task AlterColumnTypeAsync<T>(string columnName, DestructiveOperationOptions options, CancellationToken cancellationToken = default) where T : class, new()
         {
+            RequireDestructivePermission(options, nameof(AlterColumnTypeAsync));
+
             var sql = BuildAlterColumnTypeSql<T>(columnName);
             using var connection = new SqlConnection(_connectionString);
             await connection.OpenAsync(cancellationToken).ConfigureAwait(false);

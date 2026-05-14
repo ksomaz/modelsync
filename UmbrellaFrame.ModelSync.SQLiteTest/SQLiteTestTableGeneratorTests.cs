@@ -4,6 +4,7 @@ using System.Threading.Tasks;
 using Microsoft.Data.Sqlite;
 using NUnit.Framework;
 
+using UmbrellaFrame.ModelSync.Core;
 using UmbrellaFrame.ModelSync.Core.Interfaces;
 using UmbrellaFrame.ModelSync.Core.Services;
 using UmbrellaFrame.ModelSync.SQLite;
@@ -44,7 +45,7 @@ internal class InMemorySQLiteTableGenerator : SQLiteTableGenerator, ITableGenera
         => BuildRenameColumnSql<T>(oldName, newName);
 
     public void GenerateAlterColumnTypeSql<T>(string columnName) where T : class, new()
-        => AlterColumnType<T>(columnName); // SQLite'ta NotSupportedException fırlatır
+        => AlterColumnType<T>(columnName, DestructiveOperationOptions.Allow()); // SQLite'ta NotSupportedException fırlatır
 }
 
 [TestFixture]
@@ -267,7 +268,7 @@ public class SQLiteTestTableGeneratorTests
         generator.GenerateSqlTable<MockModel3>(ifNotExists: true);
         generator.CreateTables();
 
-        Assert.DoesNotThrow(() => generator.DropColumn<MockModel3>("IsActive"),  "DropColumn");
+        Assert.DoesNotThrow(() => generator.DropColumn<MockModel3>("IsActive", DestructiveOperationOptions.Allow()),  "DropColumn");
         Assert.DoesNotThrow(() => generator.AddColumn<MockModel3>("IsActive"),   "AddColumn");
     }
 

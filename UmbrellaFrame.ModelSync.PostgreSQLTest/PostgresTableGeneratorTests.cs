@@ -3,6 +3,7 @@ using System.Threading;
 using System.Threading.Tasks;
 using NUnit.Framework;
 
+using UmbrellaFrame.ModelSync.Core;
 using UmbrellaFrame.ModelSync.Core.Interfaces;
 using UmbrellaFrame.ModelSync.Core.Services;
 using UmbrellaFrame.ModelSync.PostgreSQL;
@@ -271,7 +272,7 @@ public class PostgresTableGeneratorTests
     public void AlterTable_Integration_Postgres_AddColumn()
     {
         var gen = CreateFreshPostgresMockTable3();
-        Assert.DoesNotThrow(() => gen.DropColumn<MockModel3>("IsActive"), "DropColumn (hazırlık)");
+        Assert.DoesNotThrow(() => gen.DropColumn<MockModel3>("IsActive", DestructiveOperationOptions.Allow()), "DropColumn (hazırlık)");
         Assert.DoesNotThrow(() => gen.AddColumn<MockModel3>("IsActive"),  "AddColumn");
     }
 
@@ -289,7 +290,7 @@ public class PostgresTableGeneratorTests
     public void AlterTable_Integration_Postgres_DropColumn()
     {
         var gen = CreateFreshPostgresMockTable3();
-        Assert.DoesNotThrow(() => gen.DropColumn<MockModel3>("IsActive"), "DropColumn");
+        Assert.DoesNotThrow(() => gen.DropColumn<MockModel3>("IsActive", DestructiveOperationOptions.Allow()), "DropColumn");
         Assert.DoesNotThrow(() => gen.AddColumn<MockModel3>("IsActive"),  "AddColumn (geri al)");
     }
 
@@ -298,6 +299,6 @@ public class PostgresTableGeneratorTests
     public void AlterTable_Integration_Postgres_AlterColumnType()
     {
         var gen = CreateFreshPostgresMockTable3();
-        Assert.DoesNotThrow(() => gen.AlterColumnType<MockModel3>("Price"), "AlterColumnType");
+        Assert.DoesNotThrow(() => gen.AlterColumnType<MockModel3>("Price", DestructiveOperationOptions.Allow()), "AlterColumnType");
     }
 }

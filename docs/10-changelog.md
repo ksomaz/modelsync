@@ -13,6 +13,26 @@ Sürümleme: [Semantic Versioning](https://semver.org/)
 
 ---
 
+## [1.0.2] — Güvenlik Sertleştirmesi
+
+### Eklendi
+- `DestructiveOperationOptions` eklendi.
+- `DropTables`, `DropColumn` ve `AlterColumnType` için açık destructive-operation onayı eklendi.
+- Tablo, kolon, index ve veritabanı adları için sıkı identifier doğrulaması eklendi.
+- Attribute tablo adıyla cached drop SQL üretimini doğrulayan testler eklendi.
+- Şüpheli identifier değerlerinin reddedildiğini doğrulayan testler eklendi.
+
+### Değiştirildi
+- Provider quote implementasyonları `QuoteValidatedIdentifier` üzerine taşındı; doğrulama base class içinde merkezi hale getirildi.
+- README tekrarlı içerikten arındırıldı ve v1.0.2 güvenlik davranışını anlatacak şekilde güncellendi.
+- Paket sürümleri `1.0.2` olarak güncellendi.
+
+### Düzeltildi
+- `DropTables()` akışının attribute ile verilen tablo adı yerine model class adını kullanabilmesi düzeltildi.
+- MySQL, PostgreSQL, SQL Server ve SQLite provider'larında drop işlemleri cached table-name metadata ile hizalandı.
+
+---
+
 ## [1.0.0] — Yakında
 
 ### Eklendi

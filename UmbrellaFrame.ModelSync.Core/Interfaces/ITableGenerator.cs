@@ -3,6 +3,8 @@ using System.Collections.Generic;
 using System.Threading;
 using System.Threading.Tasks;
 
+using UmbrellaFrame.ModelSync.Core;
+
 namespace UmbrellaFrame.ModelSync.Core.Interfaces
 {
     /// <summary>
@@ -50,8 +52,14 @@ namespace UmbrellaFrame.ModelSync.Core.Interfaces
         /// <summary>Drops all tables whose SQL is cached in this generator.</summary>
         void DropTables();
 
-        /// <summary>Async version of <see cref="DropTables"/>.</summary>
+        /// <summary>Drops all cached tables when destructive changes are explicitly allowed.</summary>
+        void DropTables(DestructiveOperationOptions options);
+
+        /// <summary>Async version of the guarded drop-tables operation.</summary>
         Task DropTablesAsync(CancellationToken cancellationToken = default);
+
+        /// <summary>Async version of <see cref="DropTables(DestructiveOperationOptions)"/>.</summary>
+        Task DropTablesAsync(DestructiveOperationOptions options, CancellationToken cancellationToken = default);
 
         // ── ALTER TABLE ─────────────────────────────────────────────────────
 
@@ -69,8 +77,16 @@ namespace UmbrellaFrame.ModelSync.Core.Interfaces
         /// </summary>
         void DropColumn<T>(string columnName) where T : class, new();
 
-        /// <summary>Async version of <see cref="DropColumn{T}"/>.</summary>
+        /// <summary>
+        /// Drops an existing column when destructive changes are explicitly allowed.
+        /// </summary>
+        void DropColumn<T>(string columnName, DestructiveOperationOptions options) where T : class, new();
+
+        /// <summary>Async version of the guarded drop-column operation.</summary>
         Task DropColumnAsync<T>(string columnName, CancellationToken cancellationToken = default) where T : class, new();
+
+        /// <summary>Async version of <see cref="DropColumn{T}(string, DestructiveOperationOptions)"/>.</summary>
+        Task DropColumnAsync<T>(string columnName, DestructiveOperationOptions options, CancellationToken cancellationToken = default) where T : class, new();
 
         /// <summary>
         /// Renames an existing column in the table mapped from <typeparamref name="T"/>.
@@ -86,7 +102,15 @@ namespace UmbrellaFrame.ModelSync.Core.Interfaces
         /// </summary>
         void AlterColumnType<T>(string columnName) where T : class, new();
 
-        /// <summary>Async version of <see cref="AlterColumnType{T}"/>.</summary>
+        /// <summary>
+        /// Alters a column type when destructive changes are explicitly allowed.
+        /// </summary>
+        void AlterColumnType<T>(string columnName, DestructiveOperationOptions options) where T : class, new();
+
+        /// <summary>Async version of the guarded alter-column-type operation.</summary>
         Task AlterColumnTypeAsync<T>(string columnName, CancellationToken cancellationToken = default) where T : class, new();
+
+        /// <summary>Async version of <see cref="AlterColumnType{T}(string, DestructiveOperationOptions)"/>.</summary>
+        Task AlterColumnTypeAsync<T>(string columnName, DestructiveOperationOptions options, CancellationToken cancellationToken = default) where T : class, new();
     }
 }

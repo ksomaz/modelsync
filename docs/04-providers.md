@@ -69,7 +69,7 @@ var generator = new SqlServerTableGenerator(
 SQL Server, `CREATE TABLE IF NOT EXISTS` sözdizimini desteklemez.
 ModelSync, SQL Server'da bu koruyu çıkarmaz (boş string döner).
 Tablo var/yok kontrolü için kendiniz `IF NOT EXISTS (SELECT ...)` bloğu yazmanız gerekir
-ya da `DropTables()` + `CreateTables()` akışını kullanın.
+ya da explicit onay ile `DropTables(DestructiveOperationOptions.Allow())` + `CreateTables()` akışını kullanın.
 
 ### IDENTITY (Auto Increment)
 
@@ -224,9 +224,12 @@ var    indexes   = generator.GenerateIndexSql<T>();
 
 // Sync DDL
 generator.CreateTables();
-generator.DropTables();
+generator.DropTables(DestructiveOperationOptions.Allow());
 
 // Async DDL (önerilir)
 await generator.CreateTablesAsync(cancellationToken);
-await generator.DropTablesAsync(cancellationToken);
+await generator.DropTablesAsync(DestructiveOperationOptions.Allow(), cancellationToken);
 ```
+
+`DropTables`, `DropColumn` ve `AlterColumnType` yıkıcı/riskli işlemler olduğu için
+`DestructiveOperationOptions.Allow()` olmadan exception fırlatır.

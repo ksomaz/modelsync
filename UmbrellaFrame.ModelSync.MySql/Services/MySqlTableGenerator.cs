@@ -7,6 +7,7 @@ using Microsoft.Extensions.Logging;
 
 using MySqlConnector;
 
+using UmbrellaFrame.ModelSync.Core;
 using UmbrellaFrame.ModelSync.Core.Interfaces;
 using UmbrellaFrame.ModelSync.Core.Services;
 using UmbrellaFrame.ModelSync.MySql.Resources;
@@ -22,7 +23,7 @@ namespace UmbrellaFrame.ModelSync.MySql
         private readonly string _connectionString;
 
         /// <inheritdoc/>
-        protected override string QuoteIdentifier(string identifier) => $"`{identifier}`";
+        protected override string QuoteValidatedIdentifier(string identifier) => $"`{identifier}`";
 
         /// <inheritdoc/>
         protected override string IfNotExistsClause => "IF NOT EXISTS";
@@ -57,7 +58,7 @@ namespace UmbrellaFrame.ModelSync.MySql
 
             using var connection = new MySqlConnection(builder.ConnectionString);
             connection.Open();
-            using var command = new MySqlCommand($"CREATE DATABASE IF NOT EXISTS `{databaseName}`;", connection);
+            using var command = new MySqlCommand($"CREATE DATABASE IF NOT EXISTS {QuoteIdentifier(databaseName)};", connection);
             command.ExecuteNonQuery();
         }
 
@@ -74,7 +75,7 @@ namespace UmbrellaFrame.ModelSync.MySql
 
             using var connection = new MySqlConnection(builder.ConnectionString);
             await connection.OpenAsync(cancellationToken).ConfigureAwait(false);
-            using var command = new MySqlCommand($"CREATE DATABASE IF NOT EXISTS `{databaseName}`;", connection);
+            using var command = new MySqlCommand($"CREATE DATABASE IF NOT EXISTS {QuoteIdentifier(databaseName)};", connection);
             await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
         }
 
@@ -105,10 +106,16 @@ namespace UmbrellaFrame.ModelSync.MySql
 
         /// <inheritdoc/>
         public void DropTables()
+            => RequireDestructivePermission(null, nameof(DropTables));
+
+        /// <inheritdoc/>
+        public void DropTables(DestructiveOperationOptions options)
         {
+            RequireDestructivePermission(options, nameof(DropTables));
+
             foreach (var type in SqlCache.Keys)
             {
-                var sql = InvokeGenerateDropSql(type);
+                var sql = BuildDropTableSql(type);
                 using var connection = new MySqlConnection(_connectionString);
                 connection.Open();
                 using var command = new MySqlCommand(sql, connection);
@@ -118,20 +125,23 @@ namespace UmbrellaFrame.ModelSync.MySql
 
         /// <inheritdoc/>
         public async Task DropTablesAsync(CancellationToken cancellationToken = default)
+            => await DropTablesAsync(null, cancellationToken).ConfigureAwait(false);
+
+        /// <inheritdoc/>
+        public async Task DropTablesAsync(DestructiveOperationOptions options, CancellationToken cancellationToken = default)
         {
+            RequireDestructivePermission(options, nameof(DropTablesAsync));
+
             foreach (var type in SqlCache.Keys)
             {
                 cancellationToken.ThrowIfCancellationRequested();
-                var sql = InvokeGenerateDropSql(type);
+                var sql = BuildDropTableSql(type);
                 using var connection = new MySqlConnection(_connectionString);
                 await connection.OpenAsync(cancellationToken).ConfigureAwait(false);
                 using var command = new MySqlCommand(sql, connection);
                 await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
             }
         }
-
-        private string InvokeGenerateDropSql(Type type)
-            => $"DROP TABLE IF EXISTS {QuoteIdentifier(type.Name)};";
 
         // ── ALTER TABLE ─────────────────────────────────────────────────────
 
@@ -157,7 +167,13 @@ namespace UmbrellaFrame.ModelSync.MySql
 
         /// <inheritdoc/>
         public void DropColumn<T>(string columnName) where T : class, new()
+            => RequireDestructivePermission(null, nameof(DropColumn));
+
+        /// <inheritdoc/>
+        public void DropColumn<T>(string columnName, DestructiveOperationOptions options) where T : class, new()
         {
+            RequireDestructivePermission(options, nameof(DropColumn));
+
             var sql = BuildDropColumnSql<T>(columnName);
             using var connection = new MySqlConnection(_connectionString);
             connection.Open();
@@ -167,7 +183,13 @@ namespace UmbrellaFrame.ModelSync.MySql
 
         /// <inheritdoc/>
         public async Task DropColumnAsync<T>(string columnName, CancellationToken cancellationToken = default) where T : class, new()
+            => await DropColumnAsync<T>(columnName, null, cancellationToken).ConfigureAwait(false);
+
+        /// <inheritdoc/>
+        public async Task DropColumnAsync<T>(string columnName, DestructiveOperationOptions options, CancellationToken cancellationToken = default) where T : class, new()
         {
+            RequireDestructivePermission(options, nameof(DropColumnAsync));
+
             var sql = BuildDropColumnSql<T>(columnName);
             using var connection = new MySqlConnection(_connectionString);
             await connection.OpenAsync(cancellationToken).ConfigureAwait(false);
@@ -199,17 +221,22 @@ namespace UmbrellaFrame.ModelSync.MySql
         protected override string BuildAlterColumnTypeSql<T>(string columnName)
         {
             var propertyManager = new Core.Helpers.DynamicPropertyManager<T>();
-            var tableNameAttr = propertyManager.GetClassAttribute<Core.DbTableNameAttribute>();
-            var tableName = tableNameAttr?.TableName ?? typeof(T).Name;
+            var tableName = GetTableName(propertyManager);
             var columnTypeAttr = propertyManager.GetAttribute<Core.DbColumnTypeAttribute>(columnName);
             if (columnTypeAttr == null)
                 throw new InvalidOperationException($"Column '{columnName}' has no type attribute on {typeof(T).Name}.");
-            return $"ALTER TABLE `{tableName}` MODIFY COLUMN `{columnName}` {columnTypeAttr.GetColumnType()};";
+            return $"ALTER TABLE {QuoteIdentifier(tableName)} MODIFY COLUMN {QuoteIdentifier(columnName)} {columnTypeAttr.GetColumnType()};";
         }
 
         /// <inheritdoc/>
         public void AlterColumnType<T>(string columnName) where T : class, new()
+            => RequireDestructivePermission(null, nameof(AlterColumnType));
+
+        /// <inheritdoc/>
+        public void AlterColumnType<T>(string columnName, DestructiveOperationOptions options) where T : class, new()
         {
+            RequireDestructivePermission(options, nameof(AlterColumnType));
+
             var sql = BuildAlterColumnTypeSql<T>(columnName);
             using var connection = new MySqlConnection(_connectionString);
             connection.Open();
@@ -219,7 +246,13 @@ namespace UmbrellaFrame.ModelSync.MySql
 
         /// <inheritdoc/>
         public async Task AlterColumnTypeAsync<T>(string columnName, CancellationToken cancellationToken = default) where T : class, new()
+            => await AlterColumnTypeAsync<T>(columnName, null, cancellationToken).ConfigureAwait(false);
+
+        /// <inheritdoc/>
+        public async Task AlterColumnTypeAsync<T>(string columnName, DestructiveOperationOptions options, CancellationToken cancellationToken = default) where T : class, new()
         {
+            RequireDestructivePermission(options, nameof(AlterColumnTypeAsync));
+
             var sql = BuildAlterColumnTypeSql<T>(columnName);
             using var connection = new MySqlConnection(_connectionString);
             await connection.OpenAsync(cancellationToken).ConfigureAwait(false);

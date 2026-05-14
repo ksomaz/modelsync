@@ -6,6 +6,7 @@ using Microsoft.Extensions.Logging;
 
 using Npgsql;
 
+using UmbrellaFrame.ModelSync.Core;
 using UmbrellaFrame.ModelSync.Core.Interfaces;
 using UmbrellaFrame.ModelSync.Core.Services;
 using UmbrellaFrame.ModelSync.PostgreSQL.Resources;
@@ -21,7 +22,7 @@ namespace UmbrellaFrame.ModelSync.PostgreSQL
         private readonly string _connectionString;
 
         /// <inheritdoc/>
-        protected override string QuoteIdentifier(string identifier) => $"\"{identifier}\"";
+        protected override string QuoteValidatedIdentifier(string identifier) => $"\"{identifier}\"";
 
         /// <inheritdoc/>
         protected override string IfNotExistsClause => "IF NOT EXISTS";
@@ -47,11 +48,12 @@ namespace UmbrellaFrame.ModelSync.PostgreSQL
         public void CreateDatabase()
         {
             var builder = new NpgsqlConnectionStringBuilder(_connectionString);
-            string databaseName = builder.Database;
+            var databaseName = builder.Database;
 
             if (string.IsNullOrEmpty(databaseName))
                 return;
 
+            ValidateIdentifier(databaseName);
             builder.Database = "postgres";
 
             using var connection = new NpgsqlConnection(builder.ConnectionString);
@@ -61,7 +63,7 @@ namespace UmbrellaFrame.ModelSync.PostgreSQL
             var exists = checkCmd.ExecuteScalar() != null;
             if (!exists)
             {
-                using var createCmd = new NpgsqlCommand($"CREATE DATABASE \"{databaseName}\";", connection);
+                using var createCmd = new NpgsqlCommand($"CREATE DATABASE {QuoteIdentifier(databaseName)};", connection);
                 createCmd.ExecuteNonQuery();
             }
         }
@@ -70,11 +72,12 @@ namespace UmbrellaFrame.ModelSync.PostgreSQL
         public async Task CreateDatabaseAsync(CancellationToken cancellationToken = default)
         {
             var builder = new NpgsqlConnectionStringBuilder(_connectionString);
-            string databaseName = builder.Database;
+            var databaseName = builder.Database;
 
             if (string.IsNullOrEmpty(databaseName))
                 return;
 
+            ValidateIdentifier(databaseName);
             builder.Database = "postgres";
 
             using var connection = new NpgsqlConnection(builder.ConnectionString);
@@ -84,7 +87,7 @@ namespace UmbrellaFrame.ModelSync.PostgreSQL
             var exists = await checkCmd.ExecuteScalarAsync(cancellationToken).ConfigureAwait(false) != null;
             if (!exists)
             {
-                using var createCmd = new NpgsqlCommand($"CREATE DATABASE \"{databaseName}\";", connection);
+                using var createCmd = new NpgsqlCommand($"CREATE DATABASE {QuoteIdentifier(databaseName)};", connection);
                 await createCmd.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
             }
         }
@@ -116,10 +119,16 @@ namespace UmbrellaFrame.ModelSync.PostgreSQL
 
         /// <inheritdoc/>
         public void DropTables()
+            => RequireDestructivePermission(null, nameof(DropTables));
+
+        /// <inheritdoc/>
+        public void DropTables(DestructiveOperationOptions options)
         {
+            RequireDestructivePermission(options, nameof(DropTables));
+
             foreach (var type in SqlCache.Keys)
             {
-                var sql = $"DROP TABLE IF EXISTS \"{type.Name}\";";
+                var sql = BuildDropTableSql(type);
                 using var connection = new NpgsqlConnection(_connectionString);
                 connection.Open();
                 using var command = new NpgsqlCommand(sql, connection);
@@ -129,11 +138,17 @@ namespace UmbrellaFrame.ModelSync.PostgreSQL
 
         /// <inheritdoc/>
         public async Task DropTablesAsync(CancellationToken cancellationToken = default)
+            => await DropTablesAsync(null, cancellationToken).ConfigureAwait(false);
+
+        /// <inheritdoc/>
+        public async Task DropTablesAsync(DestructiveOperationOptions options, CancellationToken cancellationToken = default)
         {
+            RequireDestructivePermission(options, nameof(DropTablesAsync));
+
             foreach (var type in SqlCache.Keys)
             {
                 cancellationToken.ThrowIfCancellationRequested();
-                var sql = $"DROP TABLE IF EXISTS \"{type.Name}\";";
+                var sql = BuildDropTableSql(type);
                 using var connection = new NpgsqlConnection(_connectionString);
                 await connection.OpenAsync(cancellationToken).ConfigureAwait(false);
                 using var command = new NpgsqlCommand(sql, connection);
@@ -150,12 +165,11 @@ namespace UmbrellaFrame.ModelSync.PostgreSQL
         protected override string BuildAlterColumnTypeSql<T>(string columnName)
         {
             var propertyManager = new Core.Helpers.DynamicPropertyManager<T>();
-            var tableNameAttr = propertyManager.GetClassAttribute<Core.DbTableNameAttribute>();
-            var tableName = tableNameAttr?.TableName ?? typeof(T).Name;
-            var columnTypeAttr = propertyManager.GetAttribute<Core.DbColumnTypeAttribute>(columnName);
+            var tableName = GetTableName(propertyManager);
+            var columnTypeAttr = propertyManager.GetAttribute<DbColumnTypeAttribute>(columnName);
             if (columnTypeAttr == null)
                 throw new InvalidOperationException($"Column '{columnName}' has no type attribute on {typeof(T).Name}.");
-            return $"ALTER TABLE \"{tableName}\" ALTER COLUMN \"{columnName}\" TYPE {columnTypeAttr.GetColumnType()};";
+            return $"ALTER TABLE {QuoteIdentifier(tableName)} ALTER COLUMN {QuoteIdentifier(columnName)} TYPE {columnTypeAttr.GetColumnType()};";
         }
 
         /// <inheritdoc/>
@@ -180,7 +194,13 @@ namespace UmbrellaFrame.ModelSync.PostgreSQL
 
         /// <inheritdoc/>
         public void DropColumn<T>(string columnName) where T : class, new()
+            => RequireDestructivePermission(null, nameof(DropColumn));
+
+        /// <inheritdoc/>
+        public void DropColumn<T>(string columnName, DestructiveOperationOptions options) where T : class, new()
         {
+            RequireDestructivePermission(options, nameof(DropColumn));
+
             var sql = BuildDropColumnSql<T>(columnName);
             using var connection = new NpgsqlConnection(_connectionString);
             connection.Open();
@@ -190,7 +210,13 @@ namespace UmbrellaFrame.ModelSync.PostgreSQL
 
         /// <inheritdoc/>
         public async Task DropColumnAsync<T>(string columnName, CancellationToken cancellationToken = default) where T : class, new()
+            => await DropColumnAsync<T>(columnName, null, cancellationToken).ConfigureAwait(false);
+
+        /// <inheritdoc/>
+        public async Task DropColumnAsync<T>(string columnName, DestructiveOperationOptions options, CancellationToken cancellationToken = default) where T : class, new()
         {
+            RequireDestructivePermission(options, nameof(DropColumnAsync));
+
             var sql = BuildDropColumnSql<T>(columnName);
             using var connection = new NpgsqlConnection(_connectionString);
             await connection.OpenAsync(cancellationToken).ConfigureAwait(false);
@@ -220,7 +246,13 @@ namespace UmbrellaFrame.ModelSync.PostgreSQL
 
         /// <inheritdoc/>
         public void AlterColumnType<T>(string columnName) where T : class, new()
+            => RequireDestructivePermission(null, nameof(AlterColumnType));
+
+        /// <inheritdoc/>
+        public void AlterColumnType<T>(string columnName, DestructiveOperationOptions options) where T : class, new()
         {
+            RequireDestructivePermission(options, nameof(AlterColumnType));
+
             var sql = BuildAlterColumnTypeSql<T>(columnName);
             using var connection = new NpgsqlConnection(_connectionString);
             connection.Open();
@@ -230,7 +262,13 @@ namespace UmbrellaFrame.ModelSync.PostgreSQL
 
         /// <inheritdoc/>
         public async Task AlterColumnTypeAsync<T>(string columnName, CancellationToken cancellationToken = default) where T : class, new()
+            => await AlterColumnTypeAsync<T>(columnName, null, cancellationToken).ConfigureAwait(false);
+
+        /// <inheritdoc/>
+        public async Task AlterColumnTypeAsync<T>(string columnName, DestructiveOperationOptions options, CancellationToken cancellationToken = default) where T : class, new()
         {
+            RequireDestructivePermission(options, nameof(AlterColumnTypeAsync));
+
             var sql = BuildAlterColumnTypeSql<T>(columnName);
             using var connection = new NpgsqlConnection(_connectionString);
             await connection.OpenAsync(cancellationToken).ConfigureAwait(false);

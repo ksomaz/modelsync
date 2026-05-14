@@ -2,6 +2,7 @@
 using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Linq;
+using System.Text.RegularExpressions;
 using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
@@ -24,13 +25,28 @@ namespace UmbrellaFrame.ModelSync.Core.Services
         protected readonly ConcurrentDictionary<Type, string> SqlCache =
             new ConcurrentDictionary<Type, string>();
 
+        /// <summary>Per-instance table-name cache keyed by model type.</summary>
+        protected readonly ConcurrentDictionary<Type, string> TableNameCache =
+            new ConcurrentDictionary<Type, string>();
+
         private readonly ILogger _logger;
+        private static readonly Regex SafeIdentifierPattern =
+            new Regex("^[A-Za-z_][A-Za-z0-9_]*$", RegexOptions.Compiled);
 
         /// <summary>
-        /// Returns the provider-specific identifier quote character(s).
+        /// Validates and quotes an SQL identifier using the provider-specific quote style.
         /// <para>MySQL → <c>`</c>, SQL Server → <c>[</c>/<c>]</c>, PostgreSQL/SQLite → <c>"</c></para>
         /// </summary>
-        protected abstract string QuoteIdentifier(string identifier);
+        protected string QuoteIdentifier(string identifier)
+        {
+            ValidateIdentifier(identifier);
+            return QuoteValidatedIdentifier(identifier);
+        }
+
+        /// <summary>
+        /// Returns the provider-specific quote syntax for an identifier that has already been validated.
+        /// </summary>
+        protected abstract string QuoteValidatedIdentifier(string identifier);
 
         /// <summary>
         /// Returns the provider-specific <c>IF NOT EXISTS</c> clause used in CREATE TABLE.
@@ -68,8 +84,7 @@ namespace UmbrellaFrame.ModelSync.Core.Services
         public string GenerateDropTableSql<T>() where T : class, new()
         {
             var propertyManager = new DynamicPropertyManager<T>();
-            var tableNameAttr = propertyManager.GetClassAttribute<DbTableNameAttribute>();
-            var tableName = tableNameAttr?.TableName ?? typeof(T).Name;
+            var tableName = GetTableName<T>(propertyManager);
             return $"DROP TABLE IF EXISTS {QuoteIdentifier(tableName)};";
         }
 
@@ -81,8 +96,7 @@ namespace UmbrellaFrame.ModelSync.Core.Services
         public virtual string GenerateTruncateTableSql<T>() where T : class, new()
         {
             var propertyManager = new DynamicPropertyManager<T>();
-            var tableNameAttr = propertyManager.GetClassAttribute<DbTableNameAttribute>();
-            var tableName = tableNameAttr?.TableName ?? typeof(T).Name;
+            var tableName = GetTableName<T>(propertyManager);
             return $"TRUNCATE TABLE {QuoteIdentifier(tableName)};";
         }
 
@@ -113,6 +127,8 @@ namespace UmbrellaFrame.ModelSync.Core.Services
                 _logger.LogDebug(CoreResources.Get("TableGen_TableNameAttrFound", tableNameAttr.TableName));
 
             var tableName = tableNameAttr?.TableName ?? type.Name;
+            ValidateIdentifier(tableName);
+            TableNameCache[type] = tableName;
 
             var ifNotExistsSql = ifNotExists ? $" {IfNotExistsClause}" : string.Empty;
             var createTableCommand = new StringBuilder();
@@ -193,8 +209,7 @@ namespace UmbrellaFrame.ModelSync.Core.Services
         public List<string> GenerateIndexSql<T>() where T : class, new()
         {
             var propertyManager = new DynamicPropertyManager<T>();
-            var tableNameAttr = propertyManager.GetClassAttribute<DbTableNameAttribute>();
-            var tableName = tableNameAttr?.TableName ?? typeof(T).Name;
+            var tableName = GetTableName<T>(propertyManager);
             var results = new List<string>();
 
             foreach (var prop in propertyManager.GetAllPropertiesOrdered())
@@ -272,10 +287,44 @@ namespace UmbrellaFrame.ModelSync.Core.Services
 
         // ── shared helpers ──────────────────────────────────────────────────
 
-        private string GetTableName<T>(DynamicPropertyManager<T> propertyManager) where T : class, new()
+        protected string GetTableName<T>(DynamicPropertyManager<T> propertyManager) where T : class, new()
         {
             var tableNameAttr = propertyManager.GetClassAttribute<DbTableNameAttribute>();
-            return tableNameAttr?.TableName ?? typeof(T).Name;
+            var tableName = tableNameAttr?.TableName ?? typeof(T).Name;
+            ValidateIdentifier(tableName);
+            return tableName;
+        }
+
+        protected string GetCachedTableName(Type type)
+        {
+            var tableName = TableNameCache.TryGetValue(type, out var cachedTableName)
+                ? cachedTableName
+                : type.Name;
+
+            ValidateIdentifier(tableName);
+            return tableName;
+        }
+
+        protected string BuildDropTableSql(Type type)
+            => $"DROP TABLE IF EXISTS {QuoteIdentifier(GetCachedTableName(type))};";
+
+        protected void ValidateIdentifier(string identifier)
+        {
+            if (string.IsNullOrWhiteSpace(identifier) || !SafeIdentifierPattern.IsMatch(identifier))
+            {
+                throw new ArgumentException(
+                    $"Invalid SQL identifier '{identifier}'. Identifiers must match ^[A-Za-z_][A-Za-z0-9_]*$.",
+                    nameof(identifier));
+            }
+        }
+
+        protected static void RequireDestructivePermission(DestructiveOperationOptions? options, string operationName)
+        {
+            if (options == null || !options.AllowDestructiveChanges)
+            {
+                throw new InvalidOperationException(
+                    $"{operationName} is destructive and may cause data loss. Pass DestructiveOperationOptions.Allow() to execute it.");
+            }
         }
 
         private string BuildColumnDefinition<T>(DynamicPropertyManager<T> propertyManager, string columnName, DbColumnTypeAttribute columnTypeAttr) where T : class, new()

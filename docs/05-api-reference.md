@@ -22,7 +22,15 @@ public interface ITableGenerator
     Task CreateTablesAsync(CancellationToken cancellationToken = default);
 
     void DropTables();
+    void DropTables(DestructiveOperationOptions options);
     Task DropTablesAsync(CancellationToken cancellationToken = default);
+    Task DropTablesAsync(DestructiveOperationOptions options, CancellationToken cancellationToken = default);
+
+    void DropColumn<T>(string columnName) where T : class, new();
+    void DropColumn<T>(string columnName, DestructiveOperationOptions options) where T : class, new();
+
+    void AlterColumnType<T>(string columnName) where T : class, new();
+    void AlterColumnType<T>(string columnName, DestructiveOperationOptions options) where T : class, new();
 }
 ```
 
@@ -36,8 +44,9 @@ Tüm provider generator sınıfları bu sınıftan türer.
 ### Korumalı Soyut Üyeler
 
 ```csharp
-// Alt sınıf tarafından zorunlu implement edilmesi gerekir
-protected abstract string QuoteIdentifier(string identifier);
+// Alt sınıf tarafından zorunlu implement edilir.
+// Identifier base class tarafından doğrulandıktan sonra çağrılır.
+protected abstract string QuoteValidatedIdentifier(string identifier);
 
 // Override için opsiyonel (varsayılan: "IF NOT EXISTS")
 // SQL Server: string.Empty dönmeli
@@ -165,10 +174,58 @@ Her SQL için ayrı bir bağlantı açılır ve kapatılır.
 
 ```csharp
 public void DropTables()
+public void DropTables(DestructiveOperationOptions options)
 public Task DropTablesAsync(CancellationToken cancellationToken = default)
+public Task DropTablesAsync(
+    DestructiveOperationOptions options,
+    CancellationToken cancellationToken = default)
 ```
 
-Her önbellekteki tip için `GenerateDropTableSql<T>()` çalıştırır.
+Önbellekteki tabloları siler. `DropTables()` ve `DropTablesAsync(CancellationToken)`
+artık güvenlik nedeniyle exception fırlatır. Gerçek silme için açık onay gerekir:
+
+```csharp
+generator.DropTables(DestructiveOperationOptions.Allow());
+await generator.DropTablesAsync(DestructiveOperationOptions.Allow(), cancellationToken);
+```
+
+Bu işlem attribute ile verilen tablo adını kullanır; class adı ile tablo adı farklıysa
+`[{Db}TableName("...")]` değeri esas alınır.
+
+---
+
+### Destructive ALTER Operations
+
+```csharp
+public void DropColumn<T>(string columnName)
+public void DropColumn<T>(string columnName, DestructiveOperationOptions options)
+public void AlterColumnType<T>(string columnName)
+public void AlterColumnType<T>(string columnName, DestructiveOperationOptions options)
+```
+
+`DropColumn` ve `AlterColumnType` veri kaybına yol açabileceği için açık onay ister:
+
+```csharp
+var allow = DestructiveOperationOptions.Allow();
+
+generator.DropColumn<Product>("LegacyCode", allow);
+generator.AlterColumnType<Product>("Price", allow);
+```
+
+Onaysız çağrılar exception fırlatır.
+
+---
+
+### Identifier Safety
+
+Tablo, kolon, index ve veritabanı adları provider quote işleminden önce doğrulanır.
+İzin verilen desen:
+
+```text
+^[A-Za-z_][A-Za-z0-9_]*$
+```
+
+Boşluk, tire, nokta, quote, bracket, noktalı virgül gibi şüpheli karakterler reddedilir.
 
 ---
 

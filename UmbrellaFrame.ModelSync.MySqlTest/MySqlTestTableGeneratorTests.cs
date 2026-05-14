@@ -3,6 +3,7 @@ using System.Threading;
 using System.Threading.Tasks;
 using NUnit.Framework;
 
+using UmbrellaFrame.ModelSync.Core;
 using UmbrellaFrame.ModelSync.Core.Interfaces;
 using UmbrellaFrame.ModelSync.Core.Services;
 using UmbrellaFrame.ModelSync.MySql;
@@ -293,7 +294,7 @@ public class MySqlTestTableGeneratorTests
     public void AlterTable_Integration_MySQL_AddColumn()
     {
         var gen = CreateFreshMySqlMockTable3();
-        Assert.DoesNotThrow(() => gen.DropColumn<MockModel3>("IsActive"), "DropColumn (hazırlık)");
+        Assert.DoesNotThrow(() => gen.DropColumn<MockModel3>("IsActive", DestructiveOperationOptions.Allow()), "DropColumn (hazırlık)");
         Assert.DoesNotThrow(() => gen.AddColumn<MockModel3>("IsActive"),  "AddColumn");
     }
 
@@ -311,7 +312,7 @@ public class MySqlTestTableGeneratorTests
     public void AlterTable_Integration_MySQL_DropColumn()
     {
         var gen = CreateFreshMySqlMockTable3();
-        Assert.DoesNotThrow(() => gen.DropColumn<MockModel3>("IsActive"), "DropColumn");
+        Assert.DoesNotThrow(() => gen.DropColumn<MockModel3>("IsActive", DestructiveOperationOptions.Allow()), "DropColumn");
         Assert.DoesNotThrow(() => gen.AddColumn<MockModel3>("IsActive"),  "AddColumn (geri al)");
     }
 
@@ -320,6 +321,6 @@ public class MySqlTestTableGeneratorTests
     public void AlterTable_Integration_MySQL_AlterColumnType()
     {
         var gen = CreateFreshMySqlMockTable3();
-        Assert.DoesNotThrow(() => gen.AlterColumnType<MockModel3>("Price"), "AlterColumnType");
+        Assert.DoesNotThrow(() => gen.AlterColumnType<MockModel3>("Price", DestructiveOperationOptions.Allow()), "AlterColumnType");
     }
 }

@@ -3,6 +3,7 @@ using System.Threading;
 using System.Threading.Tasks;
 using NUnit.Framework;
 
+using UmbrellaFrame.ModelSync.Core;
 using UmbrellaFrame.ModelSync.Core.Interfaces;
 using UmbrellaFrame.ModelSync.Core.Services;
 using UmbrellaFrame.ModelSync.SqlServer;
@@ -207,7 +208,7 @@ public class SqlServerTableGeneratorTests
         var sqlGenerator = CreateFreshMockTable3();
 
         // IsActive tablodan sil, ardından geri ekle — her iki işlem hatasız olmalı
-        Assert.DoesNotThrow(() => sqlGenerator.DropColumn<MockModel3>("IsActive"), "DropColumn (hazırlık)");
+        Assert.DoesNotThrow(() => sqlGenerator.DropColumn<MockModel3>("IsActive", DestructiveOperationOptions.Allow()), "DropColumn (hazırlık)");
         Assert.DoesNotThrow(() => sqlGenerator.AddColumn<MockModel3>("IsActive"),  "AddColumn");
     }
 
@@ -229,7 +230,7 @@ public class SqlServerTableGeneratorTests
         var sqlGenerator = CreateFreshMockTable3();
 
         // IsActive'i sil → geri ekle
-        Assert.DoesNotThrow(() => sqlGenerator.DropColumn<MockModel3>("IsActive"), "DropColumn");
+        Assert.DoesNotThrow(() => sqlGenerator.DropColumn<MockModel3>("IsActive", DestructiveOperationOptions.Allow()), "DropColumn");
         Assert.DoesNotThrow(() => sqlGenerator.AddColumn<MockModel3>("IsActive"),  "AddColumn (geri al)");
     }
 
@@ -240,6 +241,6 @@ public class SqlServerTableGeneratorTests
         var sqlGenerator = CreateFreshMockTable3();
 
         // Price kolonunun tipini attribute'tan okuyarak günceller → DECIMAL(10,2)
-        Assert.DoesNotThrow(() => sqlGenerator.AlterColumnType<MockModel3>("Price"), "AlterColumnType");
+        Assert.DoesNotThrow(() => sqlGenerator.AlterColumnType<MockModel3>("Price", DestructiveOperationOptions.Allow()), "AlterColumnType");
     }
 }

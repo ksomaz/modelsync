@@ -132,7 +132,8 @@ Her provider farklı identifier quoting kullanır:
 | PostgreSQL | Çift tırnak | `"column"` |
 | SQLite | Çift tırnak | `"column"` |
 
-`QuoteIdentifier` abstract metot, alt sınıflara bu farkı yaptırır.
+`QuoteIdentifier` base class içinde identifier doğrulaması yapar; provider'lar sadece
+doğrulanmış değer için `QuoteValidatedIdentifier` implement eder.
 
 ### 4. netstandard2.0 Hedefi
 
@@ -159,7 +160,7 @@ Yeni bir veritabanı desteği eklemek istiyorsanız:
 1. Yeni bir .NET Standard 2.0 projesi oluşturun: `UmbrellaFrame.ModelSync.{Provider}`
 2. `UmbrellaFrame.ModelSync.Core`'a proje referansı ekleyin
 3. `SqlTableGenerator`'ı miras alın, `ITableGenerator`'ı implement edin
-4. `QuoteIdentifier` ve `IfNotExistsClause`'u override edin
+4. `QuoteValidatedIdentifier` ve gerekirse `IfNotExistsClause`'u override edin
 5. ADO.NET provider ile `CreateTables`, `CreateTablesAsync`, `DropTables`, `DropTablesAsync` implement edin
 6. Provider-specific attribute'ları `DbTableNameAttribute`, `DbColumnTypeAttribute` vb. inherit ederek tanımlayın
 7. Unit test projesi ekleyin, mevcut test modellerini yeniden kullanın
@@ -170,7 +171,7 @@ public class OracleTableGenerator : SqlTableGenerator, ITableGenerator
 {
     private readonly string _connectionString;
 
-    protected override string QuoteIdentifier(string identifier) => $"\"{identifier}\"";
+    protected override string QuoteValidatedIdentifier(string identifier) => $"\"{identifier}\"";
     protected override string IfNotExistsClause => string.Empty; // Oracle desteklemez
 
     public OracleTableGenerator(string connectionString, ILogger<OracleTableGenerator> logger = null)

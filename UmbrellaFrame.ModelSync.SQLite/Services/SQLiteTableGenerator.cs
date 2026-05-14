@@ -5,6 +5,7 @@ using System.Threading.Tasks;
 using Microsoft.Data.Sqlite;
 using Microsoft.Extensions.Logging;
 
+using UmbrellaFrame.ModelSync.Core;
 using UmbrellaFrame.ModelSync.Core.Interfaces;
 using UmbrellaFrame.ModelSync.Core.Services;
 using UmbrellaFrame.ModelSync.SQLite.Resources;
@@ -20,7 +21,7 @@ namespace UmbrellaFrame.ModelSync.SQLite
         private readonly string _connectionString;
 
         /// <inheritdoc/>
-        protected override string QuoteIdentifier(string identifier) => $"\"{identifier}\"";
+        protected override string QuoteValidatedIdentifier(string identifier) => $"\"{identifier}\"";
 
         /// <inheritdoc/>
         protected override string IfNotExistsClause => "IF NOT EXISTS";
@@ -78,10 +79,16 @@ namespace UmbrellaFrame.ModelSync.SQLite
 
         /// <inheritdoc/>
         public void DropTables()
+            => RequireDestructivePermission(null, nameof(DropTables));
+
+        /// <inheritdoc/>
+        public void DropTables(DestructiveOperationOptions options)
         {
+            RequireDestructivePermission(options, nameof(DropTables));
+
             foreach (var type in SqlCache.Keys)
             {
-                var sql = $"DROP TABLE IF EXISTS \"{type.Name}\";";
+                var sql = BuildDropTableSql(type);
                 using var connection = new SqliteConnection(_connectionString);
                 connection.Open();
                 using var command = new SqliteCommand(sql, connection);
@@ -91,11 +98,17 @@ namespace UmbrellaFrame.ModelSync.SQLite
 
         /// <inheritdoc/>
         public async Task DropTablesAsync(CancellationToken cancellationToken = default)
+            => await DropTablesAsync(null, cancellationToken).ConfigureAwait(false);
+
+        /// <inheritdoc/>
+        public async Task DropTablesAsync(DestructiveOperationOptions options, CancellationToken cancellationToken = default)
         {
+            RequireDestructivePermission(options, nameof(DropTablesAsync));
+
             foreach (var type in SqlCache.Keys)
             {
                 cancellationToken.ThrowIfCancellationRequested();
-                var sql = $"DROP TABLE IF EXISTS \"{type.Name}\";";
+                var sql = BuildDropTableSql(type);
                 using var connection = new SqliteConnection(_connectionString);
                 await connection.OpenAsync(cancellationToken).ConfigureAwait(false);
                 using var command = new SqliteCommand(sql, connection);
@@ -127,7 +140,13 @@ namespace UmbrellaFrame.ModelSync.SQLite
 
         /// <inheritdoc/>
         public void DropColumn<T>(string columnName) where T : class, new()
+            => RequireDestructivePermission(null, nameof(DropColumn));
+
+        /// <inheritdoc/>
+        public void DropColumn<T>(string columnName, DestructiveOperationOptions options) where T : class, new()
         {
+            RequireDestructivePermission(options, nameof(DropColumn));
+
             var sql = BuildDropColumnSql<T>(columnName);
             using var connection = new SqliteConnection(_connectionString);
             connection.Open();
@@ -137,7 +156,13 @@ namespace UmbrellaFrame.ModelSync.SQLite
 
         /// <inheritdoc/>
         public async Task DropColumnAsync<T>(string columnName, CancellationToken cancellationToken = default) where T : class, new()
+            => await DropColumnAsync<T>(columnName, null, cancellationToken).ConfigureAwait(false);
+
+        /// <inheritdoc/>
+        public async Task DropColumnAsync<T>(string columnName, DestructiveOperationOptions options, CancellationToken cancellationToken = default) where T : class, new()
         {
+            RequireDestructivePermission(options, nameof(DropColumnAsync));
+
             var sql = BuildDropColumnSql<T>(columnName);
             using var connection = new SqliteConnection(_connectionString);
             await connection.OpenAsync(cancellationToken).ConfigureAwait(false);
@@ -167,7 +192,13 @@ namespace UmbrellaFrame.ModelSync.SQLite
 
         /// <inheritdoc/>
         public void AlterColumnType<T>(string columnName) where T : class, new()
+            => RequireDestructivePermission(null, nameof(AlterColumnType));
+
+        /// <inheritdoc/>
+        public void AlterColumnType<T>(string columnName, DestructiveOperationOptions options) where T : class, new()
         {
+            RequireDestructivePermission(options, nameof(AlterColumnType));
+
             // SQLite does not support ALTER COLUMN TYPE natively.
             // A full table rebuild is required; this throws to make the limitation explicit.
             throw new NotSupportedException("SQLite does not support altering a column type directly. Recreate the table instead.");
@@ -175,7 +206,12 @@ namespace UmbrellaFrame.ModelSync.SQLite
 
         /// <inheritdoc/>
         public Task AlterColumnTypeAsync<T>(string columnName, CancellationToken cancellationToken = default) where T : class, new()
+            => AlterColumnTypeAsync<T>(columnName, null, cancellationToken);
+
+        /// <inheritdoc/>
+        public Task AlterColumnTypeAsync<T>(string columnName, DestructiveOperationOptions options, CancellationToken cancellationToken = default) where T : class, new()
         {
+            RequireDestructivePermission(options, nameof(AlterColumnTypeAsync));
             throw new NotSupportedException("SQLite does not support altering a column type directly. Recreate the table instead.");
         }
     }

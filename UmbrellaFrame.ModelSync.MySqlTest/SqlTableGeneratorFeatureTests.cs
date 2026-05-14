@@ -189,20 +189,56 @@ public class SqlTableGeneratorFeatureTests
         public int Id { get; set; } // no column type attribute
     }
 
+    [MySqlTableName("bad-name")]
+    private class UnsafeTableNameModel
+    {
+        [MySqlColumnType(MySqlColumnType.INT)]
+        public int Id { get; set; }
+    }
+
     [Test]
     public void GenerateSqlTable_MissingColumnTypeAttribute_ThrowsInvalidOperationException()
     {
         Assert.Throws<InvalidOperationException>(() => _generator.GenerateSqlTable<BadModel>());
+    }
+
+    [Test]
+    public void GenerateSqlTable_UnsafeTableName_ThrowsArgumentException()
+    {
+        Assert.Throws<ArgumentException>(() => _generator.GenerateSqlTable<UnsafeTableNameModel>());
+    }
+
+    [Test]
+    public void GenerateDropColumnSql_UnsafeColumnName_ThrowsArgumentException()
+    {
+        Assert.Throws<ArgumentException>(() => _generator.GenerateDropColumnSql<ProductModel>("Name;DROP_TABLE"));
+    }
+
+    [Test]
+    public void CachedDropTableSql_UsesAttributeTableName()
+    {
+        _generator.GenerateSqlTable<ProductModel>();
+
+        var sql = _generator.GenerateCachedDropTableSql(typeof(ProductModel));
+
+        Assert.That(sql, Is.EqualTo("DROP TABLE IF EXISTS `products`;"));
+        Assert.That(sql, Does.Not.Contain(nameof(ProductModel)));
     }
 }
 
 /// <summary>Testable subclass that exposes cache count without requiring a real DB connection.</summary>
 internal class FakeMySqlTableGenerator : UmbrellaFrame.ModelSync.Core.Services.SqlTableGenerator
 {
-    protected override string QuoteIdentifier(string identifier) => $"`{identifier}`";
+    protected override string QuoteValidatedIdentifier(string identifier) => $"`{identifier}`";
     protected override string IfNotExistsClause => "IF NOT EXISTS";
 
     public int CacheCount => SqlCache.Count;
+
+    public string GenerateDropColumnSql<T>(string columnName) where T : class, new()
+        => BuildDropColumnSql<T>(columnName);
+
+    public string GenerateCachedDropTableSql(Type type)
+        => BuildDropTableSql(type);
 
     public void CreateTables() { }
     public System.Threading.Tasks.Task CreateTablesAsync(System.Threading.CancellationToken ct = default) => System.Threading.Tasks.Task.CompletedTask;
