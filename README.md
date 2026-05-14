@@ -35,6 +35,24 @@ UmbrellaFrame.ModelSync.Analyzers     ← Roslyn compile-time checks
 
 ---
 
+### 🧭 Design Philosophy
+
+ModelSync v1 intentionally favors **explicit, developer-controlled schema operations** over automatic schema mutation.
+
+Database schema changes can be destructive. Dropping columns, changing column types, truncating tables, or modifying constraints may cause data loss if they are applied automatically without review. For that reason, ModelSync currently generates SQL and provides explicit DDL methods, but it does not try to silently synchronize a live database by itself.
+
+The planned Phase 2 direction is **safe schema diff and migration planning**:
+
+- compare model attributes with the live database schema
+- generate an ALTER TABLE plan before applying it
+- support dry-run SQL output
+- classify risky and destructive operations
+- require explicit opt-in before data-loss operations
+
+This keeps v1 simple and predictable while leaving room for safer automation later.
+
+---
+
 ### 📦 Installation
 
 Install only the provider you need:
@@ -424,6 +442,24 @@ UmbrellaFrame.ModelSync.PostgreSQL    ← PostgreSQL sağlayıcı
 UmbrellaFrame.ModelSync.SQLite        ← SQLite sağlayıcı
 UmbrellaFrame.ModelSync.Analyzers     ← Roslyn derleme zamanı kontrolleri
 ```
+
+---
+
+### 🧭 Tasarım Felsefesi
+
+ModelSync v1, mevcut veritabanı şemasını otomatik değiştirmek yerine **geliştiricinin açıkça kontrol ettiği şema işlemlerini** tercih eder.
+
+Veritabanı şema değişiklikleri yıkıcı olabilir. Sütun silme, sütun tipi değiştirme, tabloyu boşaltma veya constraint değiştirme gibi işlemler otomatik ve kontrolsüz uygulanırsa veri kaybına neden olabilir. Bu yüzden ModelSync şu aşamada SQL üretir ve açıkça çağrılan DDL metotları sağlar; canlı veritabanını sessizce kendi kendine senkronize etmeye çalışmaz.
+
+Planlanan Faz 2 yönü **güvenli schema diff ve migration planlama**dır:
+
+- model attribute'larını canlı veritabanı şemasıyla karşılaştırmak
+- uygulamadan önce ALTER TABLE planı üretmek
+- dry-run SQL çıktısı vermek
+- riskli ve yıkıcı işlemleri sınıflandırmak
+- veri kaybı oluşturabilecek işlemler için açık onay istemek
+
+Bu yaklaşım v1'i sade ve öngörülebilir tutarken ileride daha güvenli otomasyonun önünü açar.
 
 ---
 
